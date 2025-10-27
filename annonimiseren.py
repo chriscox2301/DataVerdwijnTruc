@@ -4,6 +4,9 @@ from tkinter import ttk, filedialog, messagebox
 import pandas as pd
 import numpy as np
 import time
+import json
+import os
+from datetime import datetime
 
 # Appearance
 ctk.set_appearance_mode("dark")
@@ -208,6 +211,58 @@ def add_noise(series, max_amount):
         print(f"Fout bij ruis toevoegen: {e}")
         return series  # Return original on any error
 
+# Highscore management
+HIGHSCORE_FILE = "highscores.json"
+
+def load_highscores():
+    """Load highscores from file"""
+    if os.path.exists(HIGHSCORE_FILE):
+        try:
+            with open(HIGHSCORE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return []
+    return []
+
+def save_highscores(scores):
+    """Save highscores to file"""
+    try:
+        with open(HIGHSCORE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(scores, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error saving highscores: {e}")
+
+def add_highscore(name, score, privacy, utility):
+    """Add a new highscore and keep top 3"""
+    scores = load_highscores()
+    scores.append({
+        "name": name,
+        "score": score,
+        "privacy": privacy,
+        "utility": utility,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+    # Sort by score descending and keep top 3
+    scores.sort(key=lambda x: x["score"], reverse=True)
+    scores = scores[:3]
+    save_highscores(scores)
+    return scores
+
+def get_rank(score):
+    """Determine rank based on score"""
+    if score >= 90:
+        return "🏆 Privacy Expert"
+    elif score >= 80:
+        return "🥇 Data Guardian"
+    elif score >= 70:
+        return "🥈 Privacy Pro"
+    elif score >= 60:
+        return "🥉 Anonimiseerder"
+    elif score >= 50:
+        return "📊 Data Masker"
+    else:
+        return "🔰 Beginner"
+
 # Main App
 class DataMaskerApp(ctk.CTk):
     def __init__(self):
@@ -219,6 +274,20 @@ class DataMaskerApp(ctk.CTk):
         # Data holders
         self.df_orig = None
         self.df_transformed = None
+        
+        # Game state
+        self.player_name = None
+        self.game_started = False
+        self.game_ended = False
+        self.start_time = None
+        self.time_limit = 120  # 2 minutes in seconds
+        self.timer_id = None
+        self.best_privacy_score = 0
+        self.best_utility_score = 0
+        self.changes_made = False
+        
+        # Ask for player name first
+        self._ask_player_name()
         
         # Configure treeview styling once
         self._configure_treeview_style()
@@ -239,6 +308,15 @@ class DataMaskerApp(ctk.CTk):
         # Load default sample data
         self.use_sample_var.set(1)
         self.load_data()
+    
+    def _ask_player_name(self):
+        """Ask for player name before starting"""
+        dialog = ctk.CTkInputDialog(text="Voer je naam in om te beginnen:", title="Welkom!")
+        name = dialog.get_input()
+        if name and name.strip():
+            self.player_name = name.strip()
+        else:
+            self.player_name = "Anoniem"
         
     def _configure_treeview_style(self):
         """Configure dark treeview styling once"""
@@ -273,6 +351,19 @@ class DataMaskerApp(ctk.CTk):
         pad = {"padx": 12, "pady": 6}
         header = ctk.CTkLabel(self.sidebar, text="Dataset & Instellingen", font=ctk.CTkFont(size=16, weight="bold"))
         header.pack(anchor="w", **pad)
+        
+        # Game info section
+        game_frame = ctk.CTkFrame(self.sidebar, fg_color="#1a5f7a")
+        game_frame.pack(fill="x", padx=10, pady=(0,8))
+        
+        self.player_label = ctk.CTkLabel(game_frame, text=f"👤 Speler: {self.player_name}", font=ctk.CTkFont(size=12, weight="bold"))
+        self.player_label.pack(anchor="w", padx=8, pady=(6,2))
+        
+        self.timer_label = ctk.CTkLabel(game_frame, text="⏱️ Tijd: 2:00", font=ctk.CTkFont(size=14, weight="bold"))
+        self.timer_label.pack(anchor="w", padx=8, pady=(2,2))
+        
+        self.score_label = ctk.CTkLabel(game_frame, text="🎯 Beste score: 0", font=ctk.CTkFont(size=12))
+        self.score_label.pack(anchor="w", padx=8, pady=(2,6))
 
         # Dataset selection
         ds_frame = ctk.CTkFrame(self.sidebar)
@@ -302,11 +393,11 @@ class DataMaskerApp(ctk.CTk):
         # Techniques
         ctk.CTkLabel(self.sidebar, text="Technieken", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", **pad)
         self.apply_pseudo_var = tk.IntVar(value=1)
-        ctk.CTkCheckBox(self.sidebar, text="Pseudonimisering (vervang directe ID's)", variable=self.apply_pseudo_var).pack(anchor="w", padx=12, pady=2)
+        ctk.CTkCheckBox(self.sidebar, text="Pseudonimisering (vervang directe ID's)", variable=self.apply_pseudo_var, command=self._start_timer).pack(anchor="w", padx=12, pady=2)
 
         # Age generalization
         self.apply_general_age_var = tk.IntVar(value=1)
-        ctk.CTkCheckBox(self.sidebar, text="Generalisatie leeftijd → klassen", variable=self.apply_general_age_var).pack(anchor="w", padx=12, pady=2)
+        ctk.CTkCheckBox(self.sidebar, text="Generalisatie leeftijd → klassen", variable=self.apply_general_age_var, command=self._start_timer).pack(anchor="w", padx=12, pady=2)
         ctk.CTkLabel(self.sidebar, text="Grootte leeftijdsklasse (jaren)").pack(anchor="w", padx=12)
         self.age_bin_var = tk.IntVar(value=10)
         self.age_slider = ctk.CTkSlider(self.sidebar, from_=5, to=20, number_of_steps=4, command=self._age_slider_event)
@@ -317,7 +408,7 @@ class DataMaskerApp(ctk.CTk):
 
         # Postcode generalization
         self.apply_general_pc_var = tk.IntVar(value=1)
-        ctk.CTkCheckBox(self.sidebar, text="Generalisatie postcode → minder precisie", variable=self.apply_general_pc_var).pack(anchor="w", padx=12, pady=2)
+        ctk.CTkCheckBox(self.sidebar, text="Generalisatie postcode → minder precisie", variable=self.apply_general_pc_var, command=self._start_timer).pack(anchor="w", padx=12, pady=2)
         ctk.CTkLabel(self.sidebar, text="Aantal tekens behouden (0–4)").pack(anchor="w", padx=12)
         self.pc_slider = ctk.CTkSlider(self.sidebar, from_=0, to=4, number_of_steps=4, command=self._pc_slider_event)
         self.pc_slider.set(4)
@@ -327,7 +418,7 @@ class DataMaskerApp(ctk.CTk):
 
         # Noise
         self.apply_noise_var = tk.IntVar(value=0)
-        ctk.CTkCheckBox(self.sidebar, text="Ruis toevoegen aan leeftijd (±)", variable=self.apply_noise_var).pack(anchor="w", padx=12, pady=2)
+        ctk.CTkCheckBox(self.sidebar, text="Ruis toevoegen aan leeftijd (±)", variable=self.apply_noise_var, command=self._start_timer).pack(anchor="w", padx=12, pady=2)
         ctk.CTkLabel(self.sidebar, text="Maximale ruis (jaren)").pack(anchor="w", padx=12)
         self.noise_slider = ctk.CTkSlider(self.sidebar, from_=1, to=5, number_of_steps=4, command=self._noise_slider_event)
         self.noise_slider.set(2)
@@ -337,7 +428,7 @@ class DataMaskerApp(ctk.CTk):
 
         # Suppression / k-anonymity
         self.apply_suppress_var = tk.IntVar(value=0)
-        ctk.CTkCheckBox(self.sidebar, text="Suppressie (verwijder te unieke rijen)", variable=self.apply_suppress_var).pack(anchor="w", padx=12, pady=2)
+        ctk.CTkCheckBox(self.sidebar, text="Suppressie (verwijder te unieke rijen)", variable=self.apply_suppress_var, command=self._start_timer).pack(anchor="w", padx=12, pady=2)
         ctk.CTkLabel(self.sidebar, text="k (k-anonimiteit)").pack(anchor="w", padx=12)
         self.k_slider = ctk.CTkSlider(self.sidebar, from_=2, to=6, number_of_steps=4, command=self._k_slider_event)
         self.k_slider.set(3)
@@ -348,6 +439,10 @@ class DataMaskerApp(ctk.CTk):
         # Apply button
         self.apply_btn = ctk.CTkButton(self.sidebar, text="Apply transformations", command=self.apply_transformations)
         self.apply_btn.pack(fill="x", padx=12, pady=(8,4))
+        
+        # Submit button (for early finish)
+        self.submit_btn = ctk.CTkButton(self.sidebar, text="✅ Inleveren", command=self.submit_early, fg_color="#2d7a3e", hover_color="#236330")
+        self.submit_btn.pack(fill="x", padx=12, pady=(4,4))
         
         # Reset button
         self.reset_btn = ctk.CTkButton(self.sidebar, text="Reset naar origineel", command=self.reset_transformations)
@@ -361,8 +456,138 @@ class DataMaskerApp(ctk.CTk):
         self.help_btn = ctk.CTkButton(self.sidebar, text="Uitleg (wat gebeurt er?)", command=self.show_help)
         self.help_btn.pack(fill="x", padx=12, pady=(0,12))
 
+    def _start_timer(self):
+        """Start the game timer"""
+        if not self.game_started and not self.game_ended:
+            self.game_started = True
+            self.start_time = time.time()
+            self._update_timer()
+    
+    def _update_timer(self):
+        """Update the timer display"""
+        if self.game_ended:
+            return
+            
+        elapsed = time.time() - self.start_time
+        remaining = max(0, self.time_limit - elapsed)
+        
+        minutes = int(remaining // 60)
+        seconds = int(remaining % 60)
+        
+        self.timer_label.configure(text=f"⏱️ Tijd: {minutes}:{seconds:02d}")
+        
+        if remaining > 0:
+            self.timer_id = self.after(100, self._update_timer)
+        else:
+            self._end_game()
+    
+    def _end_game(self):
+        """End the game and show results"""
+        if self.game_ended:
+            return
+            
+        self.game_ended = True
+        
+        # Stop timer if running
+        if self.timer_id:
+            self.after_cancel(self.timer_id)
+        
+        # Show time remaining or 0:00
+        if self.start_time:
+            elapsed = time.time() - self.start_time
+            remaining = max(0, self.time_limit - elapsed)
+            minutes = int(remaining // 60)
+            seconds = int(remaining % 60)
+            self.timer_label.configure(text=f"⏱️ Tijd: {minutes}:{seconds:02d}")
+        else:
+            self.timer_label.configure(text="⏱️ Tijd: 2:00")
+        
+        # Disable all controls
+        self._disable_controls()
+        
+        # Calculate final score (average of best privacy and utility)
+        final_score = int((self.best_privacy_score + self.best_utility_score) / 2)
+        rank = get_rank(final_score)
+        
+        # Save highscore
+        highscores = add_highscore(self.player_name, final_score, self.best_privacy_score, self.best_utility_score)
+        
+        # Show results
+        self._show_game_results(final_score, rank, highscores)
+    
+    def submit_early(self):
+        """Submit the game early before time runs out"""
+        if self.game_ended:
+            return
+        
+        if not self.game_started:
+            messagebox.showinfo("Nog niet begonnen", "Je moet eerst instellingen aanpassen voordat je kunt inleveren!")
+            return
+        
+        # Ask for confirmation
+        response = messagebox.askyesno(
+            "Inleveren?", 
+            "Weet je zeker dat je wilt inleveren?\n\nJe huidige beste scores:\n"
+            f"🔒 Privacy: {self.best_privacy_score}/100\n"
+            f"📊 Utility: {self.best_utility_score}/100\n"
+            f"🎯 Gecombineerd: {int((self.best_privacy_score + self.best_utility_score) / 2)}/100"
+        )
+        
+        if response:
+            self._end_game()
+    
+    def _disable_controls(self):
+        """Disable all interactive controls"""
+        self.use_sample_cb.configure(state="disabled")
+        self.direct_listbox.configure(state="disabled")
+        self.qi_listbox.configure(state="disabled")
+        self.age_slider.configure(state="disabled")
+        self.pc_slider.configure(state="disabled")
+        self.noise_slider.configure(state="disabled")
+        self.k_slider.configure(state="disabled")
+        self.apply_btn.configure(state="disabled")
+        self.submit_btn.configure(state="disabled")
+        self.reset_btn.configure(state="disabled")
+        self.reset_settings_btn.configure(state="disabled")
+        
+        # Disable checkboxes by making them readonly
+        for widget in self.sidebar.winfo_children():
+            if isinstance(widget, ctk.CTkCheckBox):
+                widget.configure(state="disabled")
+    
+    def _show_game_results(self, final_score, rank, highscores):
+        """Show game over dialog with results"""
+        result_text = f"""
+🎮 GAME OVER! 🎮
+
+Speler: {self.player_name}
+Eindtijd: 2:00 minuten
+
+━━━━━━━━━━━━━━━━━━━━━━
+📊 JOUW SCORES:
+━━━━━━━━━━━━━━━━━━━━━━
+
+🔒 Beste Privacy Score: {self.best_privacy_score}/100
+📊 Beste Utility Score: {self.best_utility_score}/100
+
+🎯 EINDSCORE: {final_score}/100
+🏅 RANG: {rank}
+
+━━━━━━━━━━━━━━━━━━━━━━
+🏆 TOP 3 HIGHSCORES:
+━━━━━━━━━━━━━━━━━━━━━━
+"""
+        
+        for i, hs in enumerate(highscores, 1):
+            medal = ["🥇", "🥈", "🥉"][i-1]
+            result_text += f"\n{medal} {hs['name']}: {hs['score']}/100"
+            result_text += f"\n   (Privacy: {hs['privacy']}, Utility: {hs['utility']})"
+        
+        messagebox.showinfo("Game Over", result_text)
+    
     # Slider callbacks to update displayed labels
     def _age_slider_event(self, v):
+        self._start_timer()  # Start timer on first change
         # slider returns float
         val = int(float(v))
         # force to multiples of 5 (like original slider step)
@@ -373,14 +598,17 @@ class DataMaskerApp(ctk.CTk):
         self.age_value_lbl.configure(text=f"{val} jaar")
 
     def _pc_slider_event(self, v):
+        self._start_timer()  # Start timer on first change
         val = int(float(v))
         self.pc_value_lbl.configure(text=str(val))
 
     def _noise_slider_event(self, v):
+        self._start_timer()  # Start timer on first change
         val = int(float(v))
         self.noise_value_lbl.configure(text=f"{val} jaar")
 
     def _k_slider_event(self, v):
+        self._start_timer()  # Start timer on first change
         val = int(float(v))
         self.k_value_lbl.configure(text=str(val))
 
@@ -504,6 +732,8 @@ class DataMaskerApp(ctk.CTk):
     # Reset transformations to show original data
     def reset_transformations(self):
         """Reset to original data without any transformations"""
+        if self.game_ended:
+            return
         self.df_transformed = None
         self.refresh_main_views()
         print("Data gereset naar origineel")
@@ -511,6 +741,9 @@ class DataMaskerApp(ctk.CTk):
     # Reset all settings to default values
     def reset_settings(self):
         """Reset alle instellingen naar standaardwaarden"""
+        if self.game_ended:
+            return
+        
         # Reset checkboxes
         self.apply_pseudo_var.set(1)
         self.apply_general_age_var.set(1)
@@ -535,9 +768,15 @@ class DataMaskerApp(ctk.CTk):
 
     # Main transformation runner (applies current UI settings)
     def apply_transformations(self):
+        if self.game_ended:
+            return
+            
         if self.df_orig is None or self.df_orig.empty:
             messagebox.showinfo("Geen data", "Laad voorbeelddata of upload een CSV om verder te gaan.")
             return
+        
+        # Start timer on first apply
+        self._start_timer()
 
         # BELANGRIJK: Altijd beginnen vanaf de originele data
         df = self.df_orig.copy()
@@ -606,6 +845,16 @@ class DataMaskerApp(ctk.CTk):
         # scores
         p_score = privacy_score(min_k if min_k is not None else 0, k)
         u_score = utility_score(self.df_orig, df)
+        
+        # Update best scores
+        if p_score > self.best_privacy_score:
+            self.best_privacy_score = p_score
+        if u_score > self.best_utility_score:
+            self.best_utility_score = u_score
+        
+        # Update score display
+        combined_score = int((self.best_privacy_score + self.best_utility_score) / 2)
+        self.score_label.configure(text=f"🎯 Beste score: {combined_score}/100")
 
         # store transformed df
         self.df_transformed = df
