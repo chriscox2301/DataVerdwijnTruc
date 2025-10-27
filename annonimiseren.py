@@ -1,15 +1,15 @@
-# data_masker_ctk.py
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import pandas as pd
 import numpy as np
+import time
 
 # Appearance
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-# Sample data generator (same as jouw Streamlit voorbeeld, iets uitgebreider)
+# Sample data generator
 def make_sample():
     return pd.DataFrame({
         "Naam": ["Lisa Jansen", "Tom Vermeer", "Sara de Wit", "Mark Peters", "Eva Jans", "Noah Smit", "Mila Bakker", "Daan Vis", "Fleur van Lee", "Kian Vos"],
@@ -78,28 +78,70 @@ def k_anonymity(df, qi_cols):
     min_k = int(grp["count"].min()) if len(grp) else 0
     return min_k, grp
 
-# privacy / utility scoring (same heuristics)
+# privacy / utility scoring (improved heuristics)
 def privacy_score(min_k_val, target_k):
-    if min_k_val is None:
+    """
+    Privacy score berekening op basis van k-anonimiteit.
+    - Als min_k >= target_k: hoge score (80-100)
+    - Als min_k < target_k: lagere score, maar niet te laag
+    - Hogere k waarden geven hogere scores
+    """
+    if min_k_val is None or min_k_val == 0:
         return 0
-    score = min(100, int((min_k_val / max(target_k,1)) * 70) + 30)
-    return max(0, min(100, score))
+    
+    # Basis score gebaseerd op ratio min_k / target_k
+    if min_k_val >= target_k:
+        # Als we het target bereiken, score tussen 80-100
+        ratio = min(min_k_val / target_k, 3.0)  # Cap bij 3x target
+        score = 80 + (ratio - 1.0) * 10  # 80 bij target, 100 bij 3x target
+    else:
+        # Als we onder target zitten, progressieve score 0-80
+        ratio = min_k_val / target_k
+        score = ratio * 80
+    
+    return int(max(0, min(100, score)))
 
 def utility_score(df_orig, df_transformed):
-    if df_orig is None or df_transformed is None:
+    """
+    Utility score berekening op basis van informatiebehoud.
+    Meet hoeveel data nog bruikbaar is (niet gesuppressed) en 
+    hoe veel informatie bewaard blijft.
+    """
+    if df_orig is None or df_transformed is None or df_orig.empty:
         return 0
+    
+    # Start met basis score gebaseerd op aantal rijen behouden
+    rows_kept_ratio = len(df_transformed) / len(df_orig) if len(df_orig) > 0 else 0
+    base_score = rows_kept_ratio * 50  # Max 50 punten voor behouden rijen
+    
+    # Voeg punten toe voor informatie die niet geanonimiseerd is
     common_cols = [c for c in df_orig.columns if c in df_transformed.columns]
     if not common_cols:
-        return 0
-    same = 0
-    total = 0
+        return int(base_score)
+    
+    # Voor elke kolom, check of waarden nog redelijk intact zijn
+    col_scores = []
     for c in common_cols:
         a = df_orig[c].astype(str).values
         b = df_transformed[c].astype(str).values
         n = min(len(a), len(b))
-        same += (a[:n] == b[:n]).sum()
-        total += n
-    return int(100 * same / total) if total else 0
+        
+        # Exacte matches
+        exact_matches = (a[:n] == b[:n]).sum()
+        exact_score = exact_matches / n if n > 0 else 0
+        
+        # Check ook of waarden niet volledig verwijderd zijn (niet alleen *)
+        non_masked = sum(1 for v in b[:n] if v != '*' and str(v) != 'nan')
+        presence_score = non_masked / n if n > 0 else 0
+        
+        # Gemiddelde van beide scores
+        col_scores.append((exact_score * 0.6 + presence_score * 0.4))
+    
+    # Gemiddelde kolom score contribueert andere 50 punten
+    info_score = (sum(col_scores) / len(col_scores)) * 50 if col_scores else 0
+    
+    total_score = base_score + info_score
+    return int(max(0, min(100, total_score)))
 
 # Data transformation functions (ported from the Streamlit logic)
 def generalize_age(series, bin_size):
@@ -309,7 +351,11 @@ class DataMaskerApp(ctk.CTk):
         
         # Reset button
         self.reset_btn = ctk.CTkButton(self.sidebar, text="Reset naar origineel", command=self.reset_transformations)
-        self.reset_btn.pack(fill="x", padx=12, pady=(4,8))
+        self.reset_btn.pack(fill="x", padx=12, pady=(4,4))
+        
+        # Reset settings button
+        self.reset_settings_btn = ctk.CTkButton(self.sidebar, text="Reset instellingen", command=self.reset_settings)
+        self.reset_settings_btn.pack(fill="x", padx=12, pady=(4,8))
 
         # Spacer + explanation button
         self.help_btn = ctk.CTkButton(self.sidebar, text="Uitleg (wat gebeurt er?)", command=self.show_help)
@@ -461,6 +507,31 @@ class DataMaskerApp(ctk.CTk):
         self.df_transformed = None
         self.refresh_main_views()
         print("Data gereset naar origineel")
+    
+    # Reset all settings to default values
+    def reset_settings(self):
+        """Reset alle instellingen naar standaardwaarden"""
+        # Reset checkboxes
+        self.apply_pseudo_var.set(1)
+        self.apply_general_age_var.set(1)
+        self.apply_general_pc_var.set(1)
+        self.apply_noise_var.set(0)
+        self.apply_suppress_var.set(0)
+        
+        # Reset sliders
+        self.age_slider.set(10)
+        self.age_value_lbl.configure(text="10 jaar")
+        
+        self.pc_slider.set(4)
+        self.pc_value_lbl.configure(text="4")
+        
+        self.noise_slider.set(2)
+        self.noise_value_lbl.configure(text="2 jaar")
+        
+        self.k_slider.set(3)
+        self.k_value_lbl.configure(text="3")
+        
+        print("Instellingen gereset naar standaardwaarden")
 
     # Main transformation runner (applies current UI settings)
     def apply_transformations(self):
