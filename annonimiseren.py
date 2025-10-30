@@ -1,79 +1,90 @@
 import customtkinter as ctk
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog
 import pandas as pd
 import numpy as np
-import time
 import json
 import os
 from datetime import datetime
 
-# Appearance
+# === APP SETTINGS ===
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-# Sample data generator
+HIGHSCORE_FILE = "highscores.json"
+
+
+# ========== DATA / UTILS ==========
+
 def make_sample():
+    # nieuwe versie met Opleidingkeuze ipv Ziekte
     return pd.DataFrame({
-        "Naam": ["Lisa Jansen", "Tom Vermeer", "Sara de Wit", "Mark Peters", "Eva Jans", "Noah Smit", "Mila Bakker", "Daan Vis", "Fleur van Lee", "Kian Vos"],
+        "Naam": [
+            "Lisa Jansen", "Tom Vermeer", "Sara de Wit", "Mark Peters",
+            "Eva Jans", "Noah Smit", "Mila Bakker", "Daan Vis",
+            "Fleur van Lee", "Kian Vos"
+        ],
         "Leeftijd": [24, 46, 24, 33, 33, 29, 51, 51, 46, 24],
-        "Postcode": ["6215 BG","6221 CD","6215 BH","6212 AA","6212 BA","6225 CC","6215 BG","6215 BH","6221 CD","6215 BG"],
-        "Ziekte": ["Migraine","Astma","Allergie","Geen","Diabetes","Allergie","Astma","Geen","Migraine","Geen"]
+        "Postcode": [
+            "6215BG", "6221CD", "6215BH", "6212AA", "6212BA",
+            "6225CC", "6215BG", "6215BH", "6221CD", "6215BG"
+        ],
+        "Opleidingkeuze": [
+            "HBO-ICT", "Verpleegkunde", "Social Work", "Built Environment",
+            "Fysiotherapie", "HBO-ICT", "Hotel Management", "Logopedie",
+            "HBO-ICT", "Docent Muziek"
+        ]
     })
 
-# Utility: render pandas DataFrame into a ttk.Treeview with dark styling
-def show_dataframe_in_tree(tree_parent, df):
-    # Clear previous treeviews
-    for child in tree_parent.winfo_children():
+
+def show_dataframe_in_tree(parent, df, empty_text="Geen data", font_size=18):
+    for child in parent.winfo_children():
         child.destroy()
 
     if df is None or df.empty:
-        lbl = ctk.CTkLabel(tree_parent, text="Geen data", anchor="w", font=ctk.CTkFont(size=14))
+        lbl = ctk.CTkLabel(
+            parent,
+            text=empty_text,
+            anchor="w",
+            font=ctk.CTkFont(size=font_size)
+        )
         lbl.pack(fill="both", expand=True, padx=15, pady=15)
         return
 
-    frame = ctk.CTkFrame(tree_parent)
+    frame = ctk.CTkFrame(parent)
     frame.pack(fill="both", expand=True, padx=4, pady=4)
 
     cols = list(df.columns)
-    tree = ttk.Treeview(frame, columns=cols, show="headings", style="Custom.Treeview")
-    
-    # Simple scrollbars
+    tree = ttk.Treeview(
+        frame,
+        columns=cols,
+        show="headings",
+        style="Custom.Treeview"
+    )
     vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
     hsb = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
     tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
 
-    # Configure headers and columns with better sizing
-    for i, c in enumerate(cols):
+    for c in cols:
         tree.heading(c, text=str(c))
-        
-        # Calculate better column width based on content
         if not df.empty:
-            max_len = max(
-                len(str(c)),  # Header length
-                df[c].astype(str).str.len().max() if len(df) > 0 else 10
-            )
-            width = min(max(max_len * 8 + 20, 100), 200)  # Between 100-200px
+            max_len = max(len(str(c)), df[c].astype(str).str.len().max())
+            width = min(max(max_len * 9 + 30, 150), 280)
         else:
-            width = 120
-            
-        tree.column(c, width=width, anchor="w", minwidth=80)
+            width = 180
+        tree.column(c, width=width, anchor="w", minwidth=120)
 
-    # Insert rows
-    for i, (idx, row) in enumerate(df.iterrows()):
+    for _, row in df.iterrows():
         values = [str(row.get(c, "")) for c in cols]
         tree.insert("", "end", values=values)
 
-    # Grid layout
     tree.grid(row=0, column=0, sticky="nsew")
     vsb.grid(row=0, column=1, sticky="ns")
     hsb.grid(row=1, column=0, sticky="ew")
     frame.rowconfigure(0, weight=1)
     frame.columnconfigure(0, weight=1)
 
-    return tree
 
-# k-anonimiteit calculation
 def k_anonymity(df, qi_cols):
     if not qi_cols or df is None or df.empty:
         return None, None
@@ -81,101 +92,59 @@ def k_anonymity(df, qi_cols):
     min_k = int(grp["count"].min()) if len(grp) else 0
     return min_k, grp
 
-# privacy / utility scoring (improved heuristics)
+
 def privacy_score(min_k_val, target_k):
-    """
-    Privacy score berekening op basis van k-anonimiteit.
-    - Als min_k >= target_k: hoge score (80-100)
-    - Als min_k < target_k: lagere score, maar niet te laag
-    - Hogere k waarden geven hogere scores
-    """
+    # zelfde als eerder, maar prima voor demo
     if min_k_val is None or min_k_val == 0:
         return 0
-    
-    # Basis score gebaseerd op ratio min_k / target_k
     if min_k_val >= target_k:
-        # Als we het target bereiken, score tussen 80-100
-        ratio = min(min_k_val / target_k, 3.0)  # Cap bij 3x target
-        score = 80 + (ratio - 1.0) * 10  # 80 bij target, 100 bij 3x target
+        ratio = min(min_k_val / target_k, 3.0)
+        score = 80 + (ratio - 1.0) * 10
     else:
-        # Als we onder target zitten, progressieve score 0-80
         ratio = min_k_val / target_k
         score = ratio * 80
-    
     return int(max(0, min(100, score)))
 
+
 def utility_score(df_orig, df_transformed):
-    """
-    Utility score berekening op basis van informatiebehoud.
-    Meet hoeveel data nog bruikbaar is (niet gesuppressed) en 
-    hoe veel informatie bewaard blijft.
-    """
+    # ongewijzigd = 100
     if df_orig is None or df_transformed is None or df_orig.empty:
         return 0
-    
-    # Start met basis score gebaseerd op aantal rijen behouden
     rows_kept_ratio = len(df_transformed) / len(df_orig) if len(df_orig) > 0 else 0
-    base_score = rows_kept_ratio * 50  # Max 50 punten voor behouden rijen
-    
-    # Voeg punten toe voor informatie die niet geanonimiseerd is
+    base_score = rows_kept_ratio * 50
     common_cols = [c for c in df_orig.columns if c in df_transformed.columns]
     if not common_cols:
         return int(base_score)
-    
-    # Voor elke kolom, check of waarden nog redelijk intact zijn
     col_scores = []
     for c in common_cols:
         a = df_orig[c].astype(str).values
         b = df_transformed[c].astype(str).values
         n = min(len(a), len(b))
-        
-        # Exacte matches
         exact_matches = (a[:n] == b[:n]).sum()
         exact_score = exact_matches / n if n > 0 else 0
-        
-        # Check ook of waarden niet volledig verwijderd zijn (niet alleen *)
         non_masked = sum(1 for v in b[:n] if v != '*' and str(v) != 'nan')
         presence_score = non_masked / n if n > 0 else 0
-        
-        # Gemiddelde van beide scores
-        col_scores.append((exact_score * 0.6 + presence_score * 0.4))
-    
-    # Gemiddelde kolom score contribueert andere 50 punten
+        col_scores.append(exact_score * 0.6 + presence_score * 0.4)
     info_score = (sum(col_scores) / len(col_scores)) * 50 if col_scores else 0
-    
-    total_score = base_score + info_score
-    return int(max(0, min(100, total_score)))
+    return int(max(0, min(100, base_score + info_score)))
 
-# Data transformation functions (ported from the Streamlit logic)
-def generalize_age(series, bin_size):
-    """Generalize age into bins, handling various input types safely"""
+
+def generalize_age_from_numeric(series_numeric, bin_size, original_series):
     try:
-        # Probeer naar numeriek te converteren
-        s = pd.to_numeric(series, errors="coerce")
-        
-        # Check if we have valid numeric data
-        finite_vals = s.replace([np.inf, -np.inf], np.nan).dropna()
+        finite_vals = series_numeric.replace([np.inf, -np.inf], np.nan).dropna()
         if finite_vals.empty:
-            print("Waarschuwing: Geen geldige numerieke waarden voor leeftijd generalisatie")
-            return series
-            
-        # Create stable bins that cover the range
+            return original_series
         min_v = int(np.floor(finite_vals.min() / bin_size) * bin_size)
         max_v = int(np.ceil(finite_vals.max() / bin_size) * bin_size + bin_size)
         bins = np.arange(min_v, max_v + bin_size, bin_size)
         labels = [f"{int(b)}–{int(b+bin_size-1)}" for b in bins[:-1]]
-        
-        # Apply binning
-        result = pd.cut(s, bins=bins, labels=labels, include_lowest=True).astype(str)
-        
-        # Replace 'nan' strings with original values for non-numeric entries
-        mask = s.isna()
-        result[mask] = series[mask].astype(str)
-        
+        result = pd.cut(series_numeric, bins=bins, labels=labels, include_lowest=True).astype(str)
+        mask = series_numeric.isna()
+        result[mask] = original_series[mask].astype(str)
         return result
-    except Exception as e:
-        print(f"Fout bij leeftijd generalisatie: {e}")
-        return series
+    except Exception:
+        return original_series
+
 
 def generalize_postcode(series, keep_n):
     s = series.astype(str).str.upper().str.replace(r"\s+", "", regex=True)
@@ -183,57 +152,39 @@ def generalize_postcode(series, keep_n):
         return pd.Series(["*"] * len(s), index=series.index)
     return s.str[:keep_n]
 
-# RNG with fixed seed for reproducible noise (like Streamlit example)
-rng = np.random.default_rng(42)
-def add_noise(series, max_amount):
-    """Add noise to numeric series, handling various input types safely"""
-    try:
-        # Eerst proberen om naar numeriek te converteren
-        s = pd.to_numeric(series, errors="coerce")
-        
-        # Check if we have any valid numeric values
-        if s.isna().all():
-            print("Waarschuwing: Geen geldige numerieke waarden gevonden voor ruis toevoegen")
-            return series  # Return original series if no valid numbers
-            
-        # Generate noise
-        noise = rng.integers(-max_amount, max_amount+1, size=len(s))
-        
-        # Add noise and clip to non-negative
-        result = (s + noise).clip(lower=0)
-        
-        # Fill NaN values with original values where conversion failed
-        mask = s.isna()
-        result[mask] = series[mask]
-        
-        return result
-    except Exception as e:
-        print(f"Fout bij ruis toevoegen: {e}")
-        return series  # Return original on any error
 
-# Highscore management
-HIGHSCORE_FILE = "highscores.json"
+rng = np.random.default_rng(42)
+def add_noise_numeric(series_numeric, max_amount):
+    s = series_numeric.copy()
+    mask = s.isna()
+    noise = rng.integers(-max_amount, max_amount + 1, size=len(s))
+    s = s.add(noise)
+    s = s.clip(lower=0)
+    s[mask] = np.nan
+    return s
+
+
+# ========== HIGHSCORES ==========
 
 def load_highscores():
-    """Load highscores from file"""
     if os.path.exists(HIGHSCORE_FILE):
         try:
-            with open(HIGHSCORE_FILE, 'r', encoding='utf-8') as f:
+            with open(HIGHSCORE_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except:
             return []
     return []
 
+
 def save_highscores(scores):
-    """Save highscores to file"""
     try:
-        with open(HIGHSCORE_FILE, 'w', encoding='utf-8') as f:
+        with open(HIGHSCORE_FILE, "w", encoding="utf-8") as f:
             json.dump(scores, f, indent=2, ensure_ascii=False)
     except Exception as e:
-        print(f"Error saving highscores: {e}")
+        print("Error saving highscores:", e)
+
 
 def add_highscore(name, score, privacy, utility):
-    """Add a new highscore and keep top 3"""
     scores = load_highscores()
     scores.append({
         "name": name,
@@ -242,14 +193,13 @@ def add_highscore(name, score, privacy, utility):
         "utility": utility,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
-    # Sort by score descending and keep top 3
     scores.sort(key=lambda x: x["score"], reverse=True)
-    scores = scores[:3]
+    scores = scores[:10]
     save_highscores(scores)
     return scores
 
+
 def get_rank(score):
-    """Determine rank based on score"""
     if score >= 90:
         return "🏆 Privacy Expert"
     elif score >= 80:
@@ -263,532 +213,571 @@ def get_rank(score):
     else:
         return "🔰 Beginner"
 
-# Main App
+
+# ========== MAIN APP ==========
+
 class DataMaskerApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("🧩 Data Masker Machine — Desktop (CustomTkinter)")
-        self.geometry("1200x720")
-        self.minsize(1000, 600)
+        self.title("🧩 Data Masker Machine")
+        self.geometry("1250x780")
+        self.minsize(1100, 700)
 
-        # Data holders
+        # GROTE LETTERTYPES
+        self.font_title = ctk.CTkFont(size=38, weight="bold")
+        self.font_subtitle = ctk.CTkFont(size=30)
+        self.font_body = ctk.CTkFont(size=26)
+        self.font_small = ctk.CTkFont(size=22)
+
+        # STATE
+        self.player_name = ""
+        self.player_ready = False
+        self.phase = None
+        self.phase_timer_id = None
+
+        # dataset (admin upload > altijd deze)
         self.df_orig = None
         self.df_transformed = None
-        
-        # Game state
-        self.player_name = None
-        self.game_started = False
-        self.game_ended = False
-        self.start_time = None
-        self.time_limit = 120  # 2 minutes in seconds
-        self.timer_id = None
-        self.best_privacy_score = 0
-        self.best_utility_score = 0
-        self.changes_made = False
-        
-        # Ask for player name first
-        self._ask_player_name()
-        
-        # Configure treeview styling once
+
+        # huidige scores (NIET meer "beste ooit")
+        self.current_privacy_score = 0
+        self.current_utility_score = 100  # start op 100 zoals jij wilt
+
+        self.pending_apply_after = None
+        self.is_admin = False
+
         self._configure_treeview_style()
 
-        # --- Layout: sidebar (left) + main (right) ---
-        self.sidebar = ctk.CTkScrollableFrame(self, width=250, label_text="Dataset & Instellingen")
-        self.sidebar.pack(side="left", fill="y", padx=10, pady=10)
+        # FRAMES
+        self.menu_frame = ctk.CTkFrame(self)
+        self.explain_frame = ctk.CTkFrame(self)
+        self.admin_frame = ctk.CTkFrame(self)
+        self.phase_raw_frame = ctk.CTkFrame(self)
+        self.phase_settings_frame = ctk.CTkFrame(self)
+        self.phase_compare_frame = ctk.CTkFrame(self)
+        self.result_frame = ctk.CTkFrame(self)
 
-        self.main = ctk.CTkFrame(self)
-        self.main.pack(side="right", fill="both", expand=True)
+        self._build_menu_screen()
+        self._build_explain_screen()
+        self._build_admin_screen()
+        self._build_phase_raw()
+        self._build_phase_settings()
+        self._build_phase_compare()
+        self._build_result_screen()
 
-        # Sidebar contents
-        self._build_sidebar()
+        self.show_menu_screen()
 
-        # Main area: top title + two columns frames
-        self._build_main_area()
-
-        # Load default sample data
-        self.use_sample_var.set(1)
-        self.load_data()
-    
-    def _ask_player_name(self):
-        """Ask for player name before starting"""
-        dialog = ctk.CTkInputDialog(text="Voer je naam in om te beginnen:", title="Welkom!")
-        name = dialog.get_input()
-        if name and name.strip():
-            self.player_name = name.strip()
-        else:
-            self.player_name = "Anoniem"
-        
+    # ----- COMMON -----
     def _configure_treeview_style(self):
-        """Configure dark treeview styling once"""
         style = ttk.Style()
-        
         try:
             style.theme_use('alt')
-            
-            style.configure("Custom.Treeview",
-                           background="#2b2b2b",
-                           foreground="white",
-                           rowheight=25,
-                           fieldbackground="#2b2b2b",
-                           font=('Segoe UI', 10))
-            
-            style.configure("Custom.Treeview.Heading",
-                           background="#404040",
-                           foreground="white",
-                           font=('Segoe UI', 10, 'bold'))
-            
-            style.map("Custom.Treeview",
-                     background=[('selected', '#0d7377')],
-                     foreground=[('selected', 'white')])
-            
-            style.map("Custom.Treeview.Heading",
-                     background=[('active', '#505050')])
-                     
-        except Exception as e:
-            print(f"Treeview styling error: {e}")
-
-    def _build_sidebar(self):
-        pad = {"padx": 12, "pady": 6}
-        header = ctk.CTkLabel(self.sidebar, text="Dataset & Instellingen", font=ctk.CTkFont(size=16, weight="bold"))
-        header.pack(anchor="w", **pad)
-        
-        # Game info section
-        game_frame = ctk.CTkFrame(self.sidebar, fg_color="#1a5f7a")
-        game_frame.pack(fill="x", padx=10, pady=(0,8))
-        
-        self.player_label = ctk.CTkLabel(game_frame, text=f"👤 Speler: {self.player_name}", font=ctk.CTkFont(size=12, weight="bold"))
-        self.player_label.pack(anchor="w", padx=8, pady=(6,2))
-        
-        self.timer_label = ctk.CTkLabel(game_frame, text="⏱️ Tijd: 2:00", font=ctk.CTkFont(size=14, weight="bold"))
-        self.timer_label.pack(anchor="w", padx=8, pady=(2,2))
-        
-        self.score_label = ctk.CTkLabel(game_frame, text="🎯 Beste score: 0", font=ctk.CTkFont(size=12))
-        self.score_label.pack(anchor="w", padx=8, pady=(2,6))
-
-        # Dataset selection
-        ds_frame = ctk.CTkFrame(self.sidebar)
-        ds_frame.pack(fill="x", padx=10, pady=(0,8))
-
-        self.use_sample_var = tk.IntVar(value=1)
-        self.use_sample_cb = ctk.CTkCheckBox(ds_frame, text="Gebruik voorbeelddata", variable=self.use_sample_var, command=self.load_data)
-        self.use_sample_cb.pack(anchor="w", pady=4)
-
-        load_btn = ctk.CTkButton(ds_frame, text="Upload CSV", command=self.upload_csv)
-        load_btn.pack(anchor="w", pady=4)
-
-        # Placeholder for column selectors (we'll populate after data load)
-        ctk.CTkLabel(self.sidebar, text="Identificatoren", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", **pad)
-
-        self.direct_label = ctk.CTkLabel(self.sidebar, text="Directe identificatoren (multi-select)")
-        self.direct_label.pack(anchor="w", padx=12)
-        # Listbox for multi-select direct ids
-        self.direct_listbox = tk.Listbox(self.sidebar, selectmode=tk.MULTIPLE, exportselection=False, height=5)
-        self.direct_listbox.pack(fill="x", padx=12, pady=(4,8))
-
-        self.qi_label = ctk.CTkLabel(self.sidebar, text="Quasi-identificatoren (multi-select)")
-        self.qi_label.pack(anchor="w", padx=12)
-        self.qi_listbox = tk.Listbox(self.sidebar, selectmode=tk.MULTIPLE, exportselection=False, height=5)
-        self.qi_listbox.pack(fill="x", padx=12, pady=(4,8))
-
-        # Techniques
-        ctk.CTkLabel(self.sidebar, text="Technieken", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", **pad)
-        self.apply_pseudo_var = tk.IntVar(value=1)
-        ctk.CTkCheckBox(self.sidebar, text="Pseudonimisering (vervang directe ID's)", variable=self.apply_pseudo_var, command=self._start_timer).pack(anchor="w", padx=12, pady=2)
-
-        # Age generalization
-        self.apply_general_age_var = tk.IntVar(value=1)
-        ctk.CTkCheckBox(self.sidebar, text="Generalisatie leeftijd → klassen", variable=self.apply_general_age_var, command=self._start_timer).pack(anchor="w", padx=12, pady=2)
-        ctk.CTkLabel(self.sidebar, text="Grootte leeftijdsklasse (jaren)").pack(anchor="w", padx=12)
-        self.age_bin_var = tk.IntVar(value=10)
-        self.age_slider = ctk.CTkSlider(self.sidebar, from_=5, to=20, number_of_steps=4, command=self._age_slider_event)
-        self.age_slider.set(10)
-        self.age_slider.pack(fill="x", padx=12, pady=(2,6))
-        self.age_value_lbl = ctk.CTkLabel(self.sidebar, text="10 jaar")
-        self.age_value_lbl.pack(anchor="w", padx=12, pady=(0,8))
-
-        # Postcode generalization
-        self.apply_general_pc_var = tk.IntVar(value=1)
-        ctk.CTkCheckBox(self.sidebar, text="Generalisatie postcode → minder precisie", variable=self.apply_general_pc_var, command=self._start_timer).pack(anchor="w", padx=12, pady=2)
-        ctk.CTkLabel(self.sidebar, text="Aantal tekens behouden (0–4)").pack(anchor="w", padx=12)
-        self.pc_slider = ctk.CTkSlider(self.sidebar, from_=0, to=4, number_of_steps=4, command=self._pc_slider_event)
-        self.pc_slider.set(4)
-        self.pc_slider.pack(fill="x", padx=12, pady=(2,6))
-        self.pc_value_lbl = ctk.CTkLabel(self.sidebar, text="4")
-        self.pc_value_lbl.pack(anchor="w", padx=12, pady=(0,8))
-
-        # Noise
-        self.apply_noise_var = tk.IntVar(value=0)
-        ctk.CTkCheckBox(self.sidebar, text="Ruis toevoegen aan leeftijd (±)", variable=self.apply_noise_var, command=self._start_timer).pack(anchor="w", padx=12, pady=2)
-        ctk.CTkLabel(self.sidebar, text="Maximale ruis (jaren)").pack(anchor="w", padx=12)
-        self.noise_slider = ctk.CTkSlider(self.sidebar, from_=1, to=5, number_of_steps=4, command=self._noise_slider_event)
-        self.noise_slider.set(2)
-        self.noise_slider.pack(fill="x", padx=12, pady=(2,6))
-        self.noise_value_lbl = ctk.CTkLabel(self.sidebar, text="2 jaar")
-        self.noise_value_lbl.pack(anchor="w", padx=12, pady=(0,8))
-
-        # Suppression / k-anonymity
-        self.apply_suppress_var = tk.IntVar(value=0)
-        ctk.CTkCheckBox(self.sidebar, text="Suppressie (verwijder te unieke rijen)", variable=self.apply_suppress_var, command=self._start_timer).pack(anchor="w", padx=12, pady=2)
-        ctk.CTkLabel(self.sidebar, text="k (k-anonimiteit)").pack(anchor="w", padx=12)
-        self.k_slider = ctk.CTkSlider(self.sidebar, from_=2, to=6, number_of_steps=4, command=self._k_slider_event)
-        self.k_slider.set(3)
-        self.k_slider.pack(fill="x", padx=12, pady=(2,6))
-        self.k_value_lbl = ctk.CTkLabel(self.sidebar, text="3")
-        self.k_value_lbl.pack(anchor="w", padx=12, pady=(0,8))
-
-        # Apply button
-        self.apply_btn = ctk.CTkButton(self.sidebar, text="Apply transformations", command=self.apply_transformations)
-        self.apply_btn.pack(fill="x", padx=12, pady=(8,4))
-        
-        # Submit button (for early finish)
-        self.submit_btn = ctk.CTkButton(self.sidebar, text="✅ Inleveren", command=self.submit_early, fg_color="#2d7a3e", hover_color="#236330")
-        self.submit_btn.pack(fill="x", padx=12, pady=(4,4))
-        
-        # Reset button
-        self.reset_btn = ctk.CTkButton(self.sidebar, text="Reset naar origineel", command=self.reset_transformations)
-        self.reset_btn.pack(fill="x", padx=12, pady=(4,4))
-        
-        # Reset settings button
-        self.reset_settings_btn = ctk.CTkButton(self.sidebar, text="Reset instellingen", command=self.reset_settings)
-        self.reset_settings_btn.pack(fill="x", padx=12, pady=(4,8))
-
-        # Spacer + explanation button
-        self.help_btn = ctk.CTkButton(self.sidebar, text="Uitleg (wat gebeurt er?)", command=self.show_help)
-        self.help_btn.pack(fill="x", padx=12, pady=(0,12))
-
-    def _start_timer(self):
-        """Start the game timer"""
-        if not self.game_started and not self.game_ended:
-            self.game_started = True
-            self.start_time = time.time()
-            self._update_timer()
-    
-    def _update_timer(self):
-        """Update the timer display"""
-        if self.game_ended:
-            return
-            
-        elapsed = time.time() - self.start_time
-        remaining = max(0, self.time_limit - elapsed)
-        
-        minutes = int(remaining // 60)
-        seconds = int(remaining % 60)
-        
-        self.timer_label.configure(text=f"⏱️ Tijd: {minutes}:{seconds:02d}")
-        
-        if remaining > 0:
-            self.timer_id = self.after(100, self._update_timer)
-        else:
-            self._end_game()
-    
-    def _end_game(self):
-        """End the game and show results"""
-        if self.game_ended:
-            return
-            
-        self.game_ended = True
-        
-        # Stop timer if running
-        if self.timer_id:
-            self.after_cancel(self.timer_id)
-        
-        # Show time remaining or 0:00
-        if self.start_time:
-            elapsed = time.time() - self.start_time
-            remaining = max(0, self.time_limit - elapsed)
-            minutes = int(remaining // 60)
-            seconds = int(remaining % 60)
-            self.timer_label.configure(text=f"⏱️ Tijd: {minutes}:{seconds:02d}")
-        else:
-            self.timer_label.configure(text="⏱️ Tijd: 2:00")
-        
-        # Disable all controls
-        self._disable_controls()
-        
-        # Calculate final score (average of best privacy and utility)
-        final_score = int((self.best_privacy_score + self.best_utility_score) / 2)
-        rank = get_rank(final_score)
-        
-        # Save highscore
-        highscores = add_highscore(self.player_name, final_score, self.best_privacy_score, self.best_utility_score)
-        
-        # Show results
-        self._show_game_results(final_score, rank, highscores)
-    
-    def submit_early(self):
-        """Submit the game early before time runs out"""
-        if self.game_ended:
-            return
-        
-        if not self.game_started:
-            messagebox.showinfo("Nog niet begonnen", "Je moet eerst instellingen aanpassen voordat je kunt inleveren!")
-            return
-        
-        # Ask for confirmation
-        response = messagebox.askyesno(
-            "Inleveren?", 
-            "Weet je zeker dat je wilt inleveren?\n\nJe huidige beste scores:\n"
-            f"🔒 Privacy: {self.best_privacy_score}/100\n"
-            f"📊 Utility: {self.best_utility_score}/100\n"
-            f"🎯 Gecombineerd: {int((self.best_privacy_score + self.best_utility_score) / 2)}/100"
+        except:
+            pass
+        style.configure(
+            "Custom.Treeview",
+            background="#2b2b2b",
+            foreground="white",
+            fieldbackground="#2b2b2b",
+            rowheight=40,
+            font=("Segoe UI", 16),
         )
-        
-        if response:
-            self._end_game()
-    
-    def _disable_controls(self):
-        """Disable all interactive controls"""
-        self.use_sample_cb.configure(state="disabled")
-        self.direct_listbox.configure(state="disabled")
-        self.qi_listbox.configure(state="disabled")
-        self.age_slider.configure(state="disabled")
-        self.pc_slider.configure(state="disabled")
-        self.noise_slider.configure(state="disabled")
-        self.k_slider.configure(state="disabled")
-        self.apply_btn.configure(state="disabled")
-        self.submit_btn.configure(state="disabled")
-        self.reset_btn.configure(state="disabled")
-        self.reset_settings_btn.configure(state="disabled")
-        
-        # Disable checkboxes by making them readonly
-        for widget in self.sidebar.winfo_children():
-            if isinstance(widget, ctk.CTkCheckBox):
-                widget.configure(state="disabled")
-    
-    def _show_game_results(self, final_score, rank, highscores):
-        """Show game over dialog with results"""
-        result_text = f"""
-🎮 GAME OVER! 🎮
+        style.configure(
+            "Custom.Treeview.Heading",
+            background="#404040",
+            foreground="white",
+            font=("Segoe UI", 17, "bold"),
+        )
+        style.map("Custom.Treeview",
+                  background=[("selected", "#0d7377")],
+                  foreground=[("selected", "white")])
 
-Speler: {self.player_name}
-Eindtijd: 2:00 minuten
+    def clear_all_frames(self):
+        for f in (
+            self.menu_frame,
+            self.explain_frame,
+            self.admin_frame,
+            self.phase_raw_frame,
+            self.phase_settings_frame,
+            self.phase_compare_frame,
+            self.result_frame
+        ):
+            f.pack_forget()
 
-━━━━━━━━━━━━━━━━━━━━━━
-📊 JOUW SCORES:
-━━━━━━━━━━━━━━━━━━━━━━
+    # ----- MENU -----
+    def _build_menu_screen(self):
+        title = ctk.CTkLabel(self.menu_frame, text="🧩 Data Masker Machine", font=self.font_title)
+        title.pack(pady=(30, 10))
 
-🔒 Beste Privacy Score: {self.best_privacy_score}/100
-📊 Beste Utility Score: {self.best_utility_score}/100
+        subtitle = ctk.CTkLabel(self.menu_frame, text="Hoofdmenu — bekijk de highscores en vul je naam in om te starten.", font=self.font_subtitle)
+        subtitle.pack()
 
-🎯 EINDSCORE: {final_score}/100
-🏅 RANG: {rank}
+        self.hs_container = ctk.CTkFrame(self.menu_frame)
+        self.hs_container.pack(pady=25, padx=20, fill="x")
 
-━━━━━━━━━━━━━━━━━━━━━━
-🏆 TOP 3 HIGHSCORES:
-━━━━━━━━━━━━━━━━━━━━━━
-"""
-        
-        for i, hs in enumerate(highscores, 1):
-            medal = ["🥇", "🥈", "🥉"][i-1]
-            result_text += f"\n{medal} {hs['name']}: {hs['score']}/100"
-            result_text += f"\n   (Privacy: {hs['privacy']}, Utility: {hs['utility']})"
-        
-        messagebox.showinfo("Game Over", result_text)
-    
-    # Slider callbacks to update displayed labels
-    def _age_slider_event(self, v):
-        self._start_timer()  # Start timer on first change
-        # slider returns float
-        val = int(float(v))
-        # force to multiples of 5 (like original slider step)
-        if val not in (5,10,15,20):
-            # round to nearest 5
-            val = int(round(val/5)*5)
-            self.age_slider.set(val)
-        self.age_value_lbl.configure(text=f"{val} jaar")
+        self.hs_title = ctk.CTkLabel(self.hs_container, text="🏆 Highscores (top 10)", font=ctk.CTkFont(size=28, weight="bold"))
+        self.hs_title.pack(anchor="w", padx=10, pady=(10,5))
 
-    def _pc_slider_event(self, v):
-        self._start_timer()  # Start timer on first change
-        val = int(float(v))
-        self.pc_value_lbl.configure(text=str(val))
+        self.hs_list = ctk.CTkTextbox(self.hs_container, height=250, font=ctk.CTkFont(size=22))
+        self.hs_list.pack(fill="x", padx=10, pady=(0,10))
+        self.hs_list.configure(state="disabled")
 
-    def _noise_slider_event(self, v):
-        self._start_timer()  # Start timer on first change
-        val = int(float(v))
-        self.noise_value_lbl.configure(text=f"{val} jaar")
+        name_label = ctk.CTkLabel(self.menu_frame, text="👤 Naam:", font=self.font_body)
+        name_label.pack(pady=(10,2))
 
-    def _k_slider_event(self, v):
-        self._start_timer()  # Start timer on first change
-        val = int(float(v))
-        self.k_value_lbl.configure(text=str(val))
+        self.menu_name_entry = ctk.CTkEntry(self.menu_frame, placeholder_text="bv. Duncan", width=420, height=50, font=ctk.CTkFont(size=24))
+        self.menu_name_entry.pack(pady=(0,10))
 
-    # CSV upload
-    def upload_csv(self):
+        start_btn = ctk.CTkButton(
+            self.menu_frame,
+            text="Volgende",
+            command=self.go_to_explain_or_admin,
+            width=240,
+            height=55,
+            font=ctk.CTkFont(size=26, weight="bold")
+        )
+        start_btn.pack(pady=(10,10))
+
+        self.menu_msg_lbl = ctk.CTkLabel(self.menu_frame, text="", text_color="red", font=self.font_body)
+        self.menu_msg_lbl.pack()
+
+    def refresh_highscores_in_menu(self):
+        scores = load_highscores()
+        self.hs_list.configure(state="normal")
+        self.hs_list.delete("1.0", tk.END)
+        if not scores:
+            self.hs_list.insert(tk.END, "Nog geen highscores.\n")
+        else:
+            for i, hs in enumerate(scores, 1):
+                rank = get_rank(hs["score"])
+                star = "⭐️ " if i == 1 else ""
+                self.hs_list.insert(
+                    tk.END,
+                    f"{i}. {star}{hs['name']} — {hs['score']}/100 ({rank})  [P:{hs['privacy']} U:{hs['utility']}]\n"
+                )
+        self.hs_list.configure(state="disabled")
+
+    def show_menu_screen(self):
+        self.clear_all_frames()
+        self.refresh_highscores_in_menu()
+        self.menu_frame.pack(fill="both", expand=True)
+
+    def go_to_explain_or_admin(self):
+        name = self.menu_name_entry.get().strip()
+        if not name:
+            self.menu_msg_lbl.configure(text="Vul eerst een naam in.")
+            return
+
+        if name.lower() == "roodkapje":
+            self.is_admin = True
+            self.player_name = "ADMIN"
+            self.show_admin_screen()
+        else:
+            self.is_admin = False
+            self.player_name = name
+            self.player_ready = True
+            self.show_explain_screen()
+
+    # ----- ADMIN -----
+    def _build_admin_screen(self):
+        title = ctk.CTkLabel(self.admin_frame, text="🛠️ Admin menu", font=self.font_title)
+        title.pack(pady=(30,10))
+
+        info = ctk.CTkLabel(self.admin_frame, text="Je bent ingelogd als beheerder (roodkapje).", font=self.font_body)
+        info.pack(pady=(0,10))
+
+        upload_btn = ctk.CTkButton(self.admin_frame, text="Upload CSV als dataset", command=self.admin_upload_csv, width=260, height=55, font=self.font_body)
+        upload_btn.pack(pady=10)
+
+        reset_btn = ctk.CTkButton(self.admin_frame, text="Highscores resetten", fg_color="#a83232", command=self.admin_reset_highscores, width=260, height=55, font=self.font_body)
+        reset_btn.pack(pady=10)
+
+        back_btn = ctk.CTkButton(self.admin_frame, text="Terug naar hoofdmenu", command=self.show_menu_screen, width=260, height=55, font=self.font_body)
+        back_btn.pack(pady=20)
+
+        self.admin_status_lbl = ctk.CTkLabel(self.admin_frame, text="", font=self.font_body)
+        self.admin_status_lbl.pack()
+
+    def show_admin_screen(self):
+        self.clear_all_frames()
+        self.admin_frame.pack(fill="both", expand=True)
+
+    def admin_upload_csv(self):
         file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv"), ("All files", "*.*")])
         if not file_path:
             return
         try:
             df = pd.read_csv(file_path)
+            self.df_orig = df     # ⚠️ vanaf nu ALTIJD deze gebruiken!
+            self.admin_status_lbl.configure(text="Dataset aangepast!", text_color="green")
         except Exception as e:
-            messagebox.showerror("Fout bij laden", f"Kon CSV niet laden:\n{e}")
-            return
-        self.df_orig = df
-        self.populate_column_selectors()
-        self.refresh_main_views()
+            self.admin_status_lbl.configure(text=f"Fout bij laden: {e}", text_color="red")
 
-    # Loads sample data or clears
-    def load_data(self):
-        if self.use_sample_var.get() == 1:
+    def admin_reset_highscores(self):
+        save_highscores([])
+        self.admin_status_lbl.configure(text="Highscores gereset!", text_color="green")
+
+    # ----- UITLEG -----
+    def _build_explain_screen(self):
+        title = ctk.CTkLabel(self.explain_frame, text="📘 Hoe werkt dit spel?", font=self.font_title)
+        title.pack(pady=(30,10))
+
+        txt = (
+            "Je krijgt zo een dataset met (fictieve) persoonsgegevens.\n"
+            "Jouw taak: maak de gegevens minder herkenbaar (privacy), maar zorg dat ze bruikbaar blijven.\n\n"
+            "👉 Pseudonimisering (namen → ID's)\n"
+            "👉 Generalisatie (waarden grover maken)\n"
+            "👉 Ruis (cijfers een beetje aanpassen)\n"
+            "👉 Suppressie (te unieke rijen weg)\n\n"
+            "Flow:\n"
+            "1) 35s: ruwe data kijken\n"
+            "2) 60s: instellingen zetten (je ziet het direct)\n"
+            "3) 35s: vergelijken\n"
+            "Daarna score. Als je niks hebt gedaan → score = 0."
+        )
+        lbl = ctk.CTkLabel(self.explain_frame, text=txt, justify="left", font=self.font_body)
+        lbl.pack(pady=10, padx=30)
+
+        start_btn = ctk.CTkButton(self.explain_frame, text="Start spel", command=self.start_phase_raw, width=240, height=55, font=self.font_body)
+        start_btn.pack(pady=25)
+
+    def show_explain_screen(self):
+        self.clear_all_frames()
+        self.explain_frame.pack(fill="both", expand=True)
+
+    # ----- FASE 1: RAW -----
+    def _build_phase_raw(self):
+        title = ctk.CTkLabel(self.phase_raw_frame, text="📄 Dit is de ruwe data", font=self.font_title)
+        title.pack(pady=(20,5))
+
+        info = ctk.CTkLabel(
+            self.phase_raw_frame,
+            text="Bekijk deze gegevens goed. Dit is de originele dataset die je zo gaat anonimiseren.\nJe hebt 35 seconden.",
+            font=self.font_body
+        )
+        info.pack(pady=(0,10))
+
+        self.phase_raw_timer_lbl = ctk.CTkLabel(self.phase_raw_frame, text="35s over", font=ctk.CTkFont(size=26, weight="bold"))
+        self.phase_raw_timer_lbl.pack(pady=(0,10))
+
+        self.phase_raw_table = ctk.CTkFrame(self.phase_raw_frame)
+        self.phase_raw_table.pack(fill="both", expand=True, padx=10, pady=10)
+
+        next_btn = ctk.CTkButton(self.phase_raw_frame, text="Volgende → instellingen", command=self.start_phase_settings, width=280, height=55, font=self.font_body)
+        next_btn.pack(pady=(0,15))
+
+    def start_phase_raw(self):
+        # reset scores voor nieuwe ronde
+        self.current_privacy_score = 0
+        self.current_utility_score = 100
+        self.df_transformed = None
+
+        self.clear_all_frames()
+        self.phase = "raw_view"
+        self.phase_raw_frame.pack(fill="both", expand=True)
+
+        if self.df_orig is None:
             self.df_orig = make_sample()
-        else:
-            # if user unticked sample and hasn't uploaded, clear
-            if self.df_orig is None:
-                self.df_orig = pd.DataFrame()
-        self.populate_column_selectors()
-        self.refresh_main_views()
 
-    # Populate Listboxes for direct and quasi identifiers
+        show_dataframe_in_tree(self.phase_raw_table, self.df_orig, font_size=18)
+        self.start_phase_timer(35, self.phase_raw_timer_lbl, self.start_phase_settings)
+
+    # ----- FASE 2: SETTINGS -----
+    def _build_phase_settings(self):
+        self.phase_settings_frame.columnconfigure(1, weight=1)
+
+        # SIDEBAR
+        self.sidebar = ctk.CTkScrollableFrame(self.phase_settings_frame, width=300, label_text="Dataset & Instellingen")
+        self.sidebar.grid(row=0, column=0, sticky="nsw", padx=10, pady=10)
+
+        info_top = ctk.CTkLabel(
+            self.sidebar,
+            text="Pas de instellingen aan.\nProbeer zélf in te schatten wat goed is.",
+            font=self.font_body
+        )
+        info_top.pack(pady=(0,10), padx=10, anchor="w")
+
+        self.phase_settings_timer_lbl = ctk.CTkLabel(self.sidebar, text="60s", font=ctk.CTkFont(size=26, weight="bold"))
+        self.phase_settings_timer_lbl.pack(pady=(0,10), padx=10, anchor="w")
+
+        # kolommen
+        ctk.CTkLabel(self.sidebar, text="Directe identificatoren", font=ctk.CTkFont(size=22, weight="bold")).pack(anchor="w", padx=12, pady=(6,2))
+        self.direct_listbox = tk.Listbox(self.sidebar, selectmode=tk.MULTIPLE, exportselection=False, height=4, font=("Segoe UI", 14))
+        self.direct_listbox.pack(fill="x", padx=12, pady=(0,6))
+        self.direct_listbox.bind("<<ListboxSelect>>", lambda e: self.on_setting_changed())
+
+        ctk.CTkLabel(self.sidebar, text="Quasi-identificatoren", font=ctk.CTkFont(size=22, weight="bold")).pack(anchor="w", padx=12, pady=(6,2))
+        self.qi_listbox = tk.Listbox(self.sidebar, selectmode=tk.MULTIPLE, exportselection=False, height=4, font=("Segoe UI", 14))
+        self.qi_listbox.pack(fill="x", padx=12, pady=(0,8))
+        self.qi_listbox.bind("<<ListboxSelect>>", lambda e: self.on_setting_changed())
+
+        # technieken
+        ctk.CTkLabel(self.sidebar, text="Technieken", font=ctk.CTkFont(size=22, weight="bold")).pack(anchor="w", padx=12, pady=(10,4))
+
+        self.apply_pseudo_var = tk.IntVar(value=0)
+        ctk.CTkCheckBox(self.sidebar, text="Pseudonimisering", variable=self.apply_pseudo_var, command=self.on_setting_changed, font=self.font_small).pack(anchor="w", padx=12, pady=2)
+
+        self.apply_general_age_var = tk.IntVar(value=0)
+        ctk.CTkCheckBox(self.sidebar, text="Generalisatie leeftijd", variable=self.apply_general_age_var, command=self.on_setting_changed, font=self.font_small).pack(anchor="w", padx=12, pady=2)
+
+        ctk.CTkLabel(self.sidebar, text="Leeftijdsklasse (2-30)", font=self.font_small).pack(anchor="w", padx=12)
+        self.age_slider = ctk.CTkSlider(self.sidebar, from_=2, to=30, number_of_steps=28, command=self._age_slider_event)
+        self.age_slider.set(2)
+        self.age_slider.pack(fill="x", padx=12, pady=(2,6))
+        self.age_value_lbl = ctk.CTkLabel(self.sidebar, text="2 jaar", font=self.font_small)
+        self.age_value_lbl.pack(anchor="w", padx=12, pady=(0,6))
+
+        self.apply_general_pc_var = tk.IntVar(value=0)
+        ctk.CTkCheckBox(self.sidebar, text="Generalisatie postcode", variable=self.apply_general_pc_var, command=self.on_setting_changed, font=self.font_small).pack(anchor="w", padx=12, pady=2)
+
+        ctk.CTkLabel(self.sidebar, text="Postcode tekens (0-6)", font=self.font_small).pack(anchor="w", padx=12)
+        self.pc_slider = ctk.CTkSlider(self.sidebar, from_=0, to=6, number_of_steps=6, command=self._pc_slider_event)
+        self.pc_slider.set(0)
+        self.pc_slider.pack(fill="x", padx=12, pady=(2,6))
+        self.pc_value_lbl = ctk.CTkLabel(self.sidebar, text="0", font=self.font_small)
+        self.pc_value_lbl.pack(anchor="w", padx=12, pady=(0,6))
+
+        self.apply_noise_var = tk.IntVar(value=0)
+        ctk.CTkCheckBox(self.sidebar, text="Ruis toevoegen aan leeftijd", variable=self.apply_noise_var, command=self.on_setting_changed, font=self.font_small).pack(anchor="w", padx=12, pady=2)
+
+        ctk.CTkLabel(self.sidebar, text="Max. ruis (0-10)", font=self.font_small).pack(anchor="w", padx=12)
+        self.noise_slider = ctk.CTkSlider(self.sidebar, from_=0, to=10, number_of_steps=10, command=self._noise_slider_event)
+        self.noise_slider.set(0)
+        self.noise_slider.pack(fill="x", padx=12, pady=(2,6))
+        self.noise_value_lbl = ctk.CTkLabel(self.sidebar, text="0 jaar", font=self.font_small)
+        self.noise_value_lbl.pack(anchor="w", padx=12, pady=(0,6))
+
+        self.apply_suppress_var = tk.IntVar(value=0)
+        ctk.CTkCheckBox(self.sidebar, text="Suppressie (k-anonimiteit)", variable=self.apply_suppress_var, command=self.on_setting_changed, font=self.font_small).pack(anchor="w", padx=12, pady=2)
+
+        ctk.CTkLabel(self.sidebar, text="k (2-10)", font=self.font_small).pack(anchor="w", padx=12)
+        self.k_slider = ctk.CTkSlider(self.sidebar, from_=2, to=10, number_of_steps=8, command=self._k_slider_event)
+        self.k_slider.set(2)
+        self.k_slider.pack(fill="x", padx=12, pady=(2,6))
+        self.k_value_lbl = ctk.CTkLabel(self.sidebar, text="2", font=self.font_small)
+        self.k_value_lbl.pack(anchor="w", padx=12, pady=(0,6))
+
+        done_btn = ctk.CTkButton(self.sidebar, text="Klaar met instellingen →", command=self.start_phase_compare, font=self.font_small, height=46)
+        done_btn.pack(fill="x", padx=12, pady=(8,12))
+
+        # RIGHT AREA -> 1 dataset (live)
+        right = ctk.CTkFrame(self.phase_settings_frame)
+        right.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+        self.phase_settings_frame.rowconfigure(0, weight=1)
+        self.phase_settings_frame.columnconfigure(1, weight=1)
+
+        title = ctk.CTkLabel(right, text="📊 Dataset (live)", font=self.font_subtitle)
+        title.pack(anchor="nw", pady=(8,4), padx=8)
+
+        self.settings_data_container = ctk.CTkFrame(right)
+        self.settings_data_container.pack(fill="both", expand=True, padx=8, pady=(6,8))
+
+    def start_phase_settings(self):
+        self.stop_phase_timer()
+        self.clear_all_frames()
+        self.phase = "settings"
+        self.phase_settings_frame.pack(fill="both", expand=True)
+
+        if self.df_orig is None:
+            self.df_orig = make_sample()
+
+        self.populate_column_selectors()
+
+        # alles uit + sliders links
+        self.apply_pseudo_var.set(0)
+        self.apply_general_age_var.set(0)
+        self.apply_general_pc_var.set(0)
+        self.apply_noise_var.set(0)
+        self.apply_suppress_var.set(0)
+        self.age_slider.set(2)
+        self.age_value_lbl.configure(text="2 jaar")
+        self.pc_slider.set(0)
+        self.pc_value_lbl.configure(text="0")
+        self.noise_slider.set(0)
+        self.noise_value_lbl.configure(text="0 jaar")
+        self.k_slider.set(2)
+        self.k_value_lbl.configure(text="2")
+
+        self.direct_listbox.selection_clear(0, tk.END)
+        self.qi_listbox.selection_clear(0, tk.END)
+
+        # laten zien: ruwe dataset
+        show_dataframe_in_tree(self.settings_data_container, self.df_orig, font_size=16)
+
+        # scores resetten voor deze fase
+        self.current_privacy_score = 0
+        self.current_utility_score = 100
+
+        self.start_phase_timer(60, self.phase_settings_timer_lbl, self.start_phase_compare)
+
+    # ----- FASE 3: COMPARE -----
+    def _build_phase_compare(self):
+        title = ctk.CTkLabel(self.phase_compare_frame, text="🔍 Vergelijking", font=self.font_title)
+        title.pack(pady=(20,5))
+
+        info = ctk.CTkLabel(
+            self.phase_compare_frame,
+            text="Links zie je de originele data, rechts de getransformeerde data.\nJe hebt 35 seconden om te kijken wat je instellingen gedaan hebben.",
+            font=self.font_body
+        )
+        info.pack(pady=(0,10))
+
+        self.phase_compare_timer_lbl = ctk.CTkLabel(self.phase_compare_frame, text="35s over", font=ctk.CTkFont(size=26, weight="bold"))
+        self.phase_compare_timer_lbl.pack()
+
+        container = ctk.CTkFrame(self.phase_compare_frame)
+        container.pack(fill="both", expand=True, padx=10, pady=10)
+        container.columnconfigure(0, weight=1)
+        container.columnconfigure(1, weight=1)
+        container.rowconfigure(0, weight=1)
+
+        self.compare_orig = ctk.CTkFrame(container)
+        self.compare_orig.grid(row=0, column=0, sticky="nsew", padx=(0,5))
+
+        self.compare_trans = ctk.CTkFrame(container)
+        self.compare_trans.grid(row=0, column=1, sticky="nsew", padx=(5,0))
+
+        next_btn = ctk.CTkButton(self.phase_compare_frame, text="Naar score →", command=self.show_result_screen, width=240, height=50, font=self.font_body)
+        next_btn.pack(pady=10)
+
+    def start_phase_compare(self):
+        self.stop_phase_timer()
+        self.clear_all_frames()
+        self.phase = "compare"
+        self.phase_compare_frame.pack(fill="both", expand=True)
+
+        show_dataframe_in_tree(self.compare_orig, self.df_orig, font_size=16)
+        show_dataframe_in_tree(self.compare_trans, self.df_transformed, font_size=16)
+
+        self.start_phase_timer(35, self.phase_compare_timer_lbl, self.show_result_screen)
+
+    # ----- RESULT -----
+    def _build_result_screen(self):
+        title = ctk.CTkLabel(self.result_frame, text="🎮 Resultaat", font=self.font_title)
+        title.pack(pady=(30,10))
+
+        self.result_info_lbl = ctk.CTkLabel(self.result_frame, text="", justify="left", font=self.font_body)
+        self.result_info_lbl.pack(pady=10)
+
+        submit_btn = ctk.CTkButton(self.result_frame, text="Afronden", command=self.submit_score_and_back_to_menu, width=220, height=55, font=self.font_body)
+        submit_btn.pack(pady=15)
+
+    def _any_technique_enabled(self):
+        return (
+            bool(self.apply_pseudo_var.get()) or
+            bool(self.apply_general_age_var.get()) or
+            bool(self.apply_general_pc_var.get()) or
+            bool(self.apply_noise_var.get()) or
+            bool(self.apply_suppress_var.get())
+        )
+
+    def _any_qi_selected(self):
+        return len(self.qi_listbox.curselection()) > 0
+
+    def show_result_screen(self):
+        self.stop_phase_timer()
+
+        # eindscore = (2x privacy + 1x bruikbaarheid)/3
+        final_score = int((2 * self.current_privacy_score + self.current_utility_score) / 3)
+
+        # als echt niks aan staat of geen QI's → 0
+        if not self._any_technique_enabled() or not self._any_qi_selected():
+            final_score = 0
+
+        self.result_privacy = self.current_privacy_score
+        self.result_utility = self.current_utility_score
+        self.result_final = final_score
+
+        self.clear_all_frames()
+        self.result_frame.pack(fill="both", expand=True)
+
+        rank = get_rank(self.result_final)
+        info = (
+            f"Speler: {self.player_name}\n\n"
+            f"🔒 Privacy-score: {self.result_privacy}/100\n"
+            f"📊 Bruikbaarheid-score: {self.result_utility}/100\n"
+            f"🎯 Eindscore: {self.result_final}/100\n"
+            f"🏅 Rang: {rank}"
+        )
+        self.result_info_lbl.configure(text=info)
+
+    def submit_score_and_back_to_menu(self):
+        add_highscore(self.player_name, self.result_final, self.result_privacy, self.result_utility)
+        self.show_menu_screen()
+
+    # ----- TIMERS -----
+    def start_phase_timer(self, seconds, label_widget, on_finish):
+        self.phase_time_left = seconds
+        self.phase_timer_label = label_widget
+        self.phase_timer_callback = on_finish
+        self._tick_phase_timer()
+
+    def _tick_phase_timer(self):
+        if self.phase_time_left <= 0:
+            self.phase_timer_id = None
+            self.phase_timer_callback()
+            return
+        self.phase_timer_label.configure(text=f"{self.phase_time_left}s over")
+        self.phase_time_left -= 1
+        self.phase_timer_id = self.after(1000, self._tick_phase_timer)
+
+    def stop_phase_timer(self):
+        if self.phase_timer_id:
+            self.after_cancel(self.phase_timer_id)
+            self.phase_timer_id = None
+
+    # ----- SETTINGS CHANGE -----
+    def on_setting_changed(self):
+        if self.phase != "settings":
+            return
+        if self.pending_apply_after is not None:
+            self.after_cancel(self.pending_apply_after)
+        self.pending_apply_after = self.after(200, self.apply_transformations)
+
+    # ----- UI CALLBACKS -----
+    def _age_slider_event(self, v):
+        val = int(float(v))
+        self.age_value_lbl.configure(text=f"{val} jaar")
+        self.on_setting_changed()
+
+    def _pc_slider_event(self, v):
+        val = int(float(v))
+        self.pc_value_lbl.configure(text=str(val))
+        self.on_setting_changed()
+
+    def _noise_slider_event(self, v):
+        val = int(float(v))
+        self.noise_value_lbl.configure(text=f"{val} jaar")
+        self.on_setting_changed()
+
+    def _k_slider_event(self, v):
+        val = int(float(v))
+        self.k_value_lbl.configure(text=str(val))
+        self.on_setting_changed()
+
+    # ----- DATA LOAD -----
     def populate_column_selectors(self):
         cols = list(self.df_orig.columns) if self.df_orig is not None else []
-        # Clear listboxes
         self.direct_listbox.delete(0, tk.END)
         self.qi_listbox.delete(0, tk.END)
         for c in cols:
             self.direct_listbox.insert(tk.END, c)
             self.qi_listbox.insert(tk.END, c)
-        # default selections: Naam as direct, leeftijd/postcode as qi if present
-        try:
-            # select "Naam" if present in direct
-            if "Naam" in cols:
-                idx = cols.index("Naam")
-                self.direct_listbox.select_set(idx)
-            # select default quasi
-            defaults = [c for c in cols if c.lower() in ["leeftijd", "postcode"]]
-            for d in defaults:
-                idx = cols.index(d)
-                self.qi_listbox.select_set(idx)
-        except Exception:
-            pass
 
-    # Build main area layout
-    def _build_main_area(self):
-        # Title
-        title = ctk.CTkLabel(self.main, text="🧩 Data Masker Machine — Anonimisering Demo", font=ctk.CTkFont(size=18, weight="bold"))
-        title.pack(anchor="nw", padx=12, pady=(12,6))
-
-        subtitle = ctk.CTkLabel(self.main, text="Speel met verschillende anonimiseringstechnieken en zie direct het effect op privacy en bruikbaarheid.")
-        subtitle.pack(anchor="nw", padx=12, pady=(0,8))
-
-        # Two columns area
-        self.top_frame = ctk.CTkFrame(self.main)
-        self.top_frame.pack(fill="both", expand=True, padx=12, pady=(6,12))
-
-        # Left column (originele + transformed data)
-        self.left_col = ctk.CTkFrame(self.top_frame)
-        self.left_col.pack(side="left", fill="both", expand=True, padx=(0,6))
-
-        # Right column (groups + metrics)
-        self.right_col = ctk.CTkFrame(self.top_frame, width=360)
-        self.right_col.pack(side="right", fill="y")
-
-        # In left: original data (top) and transformed data (bottom)
-        self.orig_label = ctk.CTkLabel(self.left_col, text="📋 Ruwe data", font=ctk.CTkFont(size=16, weight="bold"))
-        self.orig_label.pack(anchor="nw", pady=(8,4), padx=8)
-        self.orig_table_container = ctk.CTkFrame(self.left_col)
-        self.orig_table_container.pack(fill="both", expand=True, padx=8, pady=(0,12))
-
-        self.trans_label = ctk.CTkLabel(self.left_col, text="🔄 Getransformeerde data", font=ctk.CTkFont(size=16, weight="bold"))
-        self.trans_label.pack(anchor="nw", pady=(8,4), padx=8)
-        self.trans_table_container = ctk.CTkFrame(self.left_col)
-        self.trans_table_container.pack(fill="both", expand=True, padx=8, pady=(0,12))
-
-        # In right: groups area + metrics + suppressed info + groups tree
-        self.k_label = ctk.CTkLabel(self.right_col, text="🔐 k-anonimiteit & groepen", font=ctk.CTkFont(size=16, weight="bold"))
-        self.k_label.pack(anchor="nw", pady=(8,6), padx=8)
-
-        self.groups_container = ctk.CTkFrame(self.right_col)
-        self.groups_container.pack(fill="both", expand=False, padx=8, pady=(0,12))
-        self.groups_table = None
-
-        # Metrics
-        self.metrics_frame = ctk.CTkFrame(self.right_col)
-        self.metrics_frame.pack(fill="x", padx=8, pady=8)
-        
-        # Metrics title
-        metrics_title = ctk.CTkLabel(self.metrics_frame, text="📊 Resultaten", font=ctk.CTkFont(size=14, weight="bold"))
-        metrics_title.pack(fill="x", pady=(8,4))
-        
-        self.privacy_metric_lbl = ctk.CTkLabel(self.metrics_frame, text="🔒 Privacy-score (heuristisch): -/100", anchor="w", font=ctk.CTkFont(size=12))
-        self.privacy_metric_lbl.pack(fill="x", pady=(6,4), padx=6)
-        
-        self.utility_metric_lbl = ctk.CTkLabel(self.metrics_frame, text="📊 Bruikbaarheid-score (heuristisch): -/100", anchor="w", font=ctk.CTkFont(size=12))
-        self.utility_metric_lbl.pack(fill="x", pady=(4,6), padx=6)
-        
-        self.suppressed_lbl = ctk.CTkLabel(self.metrics_frame, text="🗑️ Suppressed rijen: 0", anchor="w", font=ctk.CTkFont(size=12))
-        self.suppressed_lbl.pack(fill="x", pady=(6,8), padx=6)
-
-    # Show explanation popup
-    def show_help(self):
-        help_text = (
-            "Technieken in deze demo:\n\n"
-            "- Pseudonimisering: vervangt directe identificatoren met tokens (bv. Naam -> ID-001).\n"
-            "- Generalisatie: maakt waarden grover (bv. leeftijd in klassen, postcode korter).\n"
-            "- Ruis toevoegen: verandert numerieke waarden lichtjes (bv. leeftijd ±2).\n"
-            "- Suppressie: verwijdert records/groepen die te uniek zijn voor een gekozen k.\n\n"
-            "De scores zijn heuristisch en bedoeld voor educatieve illustratie."
-        )
-        messagebox.showinfo("Uitleg", help_text)
-
-    # Reset transformations to show original data
-    def reset_transformations(self):
-        """Reset to original data without any transformations"""
-        if self.game_ended:
-            return
-        self.df_transformed = None
-        self.refresh_main_views()
-        print("Data gereset naar origineel")
-    
-    # Reset all settings to default values
-    def reset_settings(self):
-        """Reset alle instellingen naar standaardwaarden"""
-        if self.game_ended:
-            return
-        
-        # Reset checkboxes
-        self.apply_pseudo_var.set(1)
-        self.apply_general_age_var.set(1)
-        self.apply_general_pc_var.set(1)
-        self.apply_noise_var.set(0)
-        self.apply_suppress_var.set(0)
-        
-        # Reset sliders
-        self.age_slider.set(10)
-        self.age_value_lbl.configure(text="10 jaar")
-        
-        self.pc_slider.set(4)
-        self.pc_value_lbl.configure(text="4")
-        
-        self.noise_slider.set(2)
-        self.noise_value_lbl.configure(text="2 jaar")
-        
-        self.k_slider.set(3)
-        self.k_value_lbl.configure(text="3")
-        
-        print("Instellingen gereset naar standaardwaarden")
-
-    # Main transformation runner (applies current UI settings)
+    # ----- APPLY -----
     def apply_transformations(self):
-        if self.game_ended:
-            return
-            
-        if self.df_orig is None or self.df_orig.empty:
-            messagebox.showinfo("Geen data", "Laad voorbeelddata of upload een CSV om verder te gaan.")
-            return
-        
-        # Start timer on first apply
-        self._start_timer()
+        self.pending_apply_after = None
 
-        # BELANGRIJK: Altijd beginnen vanaf de originele data
+        if self.phase != "settings":
+            return
+        if self.df_orig is None or self.df_orig.empty:
+            return
+
         df = self.df_orig.copy()
 
-        # read selected direct ids & qi from listboxes
-        direct_idxs = self.direct_listbox.curselection()
-        direct_ids = [self.direct_listbox.get(i) for i in direct_idxs]
+        direct_ids = [self.direct_listbox.get(i) for i in self.direct_listbox.curselection()]
+        qi_cols = [self.qi_listbox.get(i) for i in self.qi_listbox.curselection()]
 
-        qi_idxs = self.qi_listbox.curselection()
-        qi_cols = [self.qi_listbox.get(i) for i in qi_idxs]
-
-        # options
         apply_pseudo = bool(self.apply_pseudo_var.get())
         apply_general_age = bool(self.apply_general_age_var.get())
         age_bin_size = int(round(self.age_slider.get()))
@@ -799,140 +788,55 @@ Eindtijd: 2:00 minuten
         apply_suppress = bool(self.apply_suppress_var.get())
         k = int(round(self.k_slider.get()))
 
-        # VOLGORDE IS BELANGRIJK: Eerst noise, dan generalisatie, dan pseudonimisering
-        
-        # 1. Ruis toevoegen (moet eerst, op originele numerieke waarden)
-        if "Leeftijd" in df.columns and apply_noise:
-            try:
-                df["Leeftijd"] = add_noise(df["Leeftijd"], noise_amount)
-            except Exception as e:
-                print(f"Fout bij ruis toevoegen: {e}")
+        # Leeftijd
+        if "Leeftijd" in df.columns:
+            age_num = pd.to_numeric(df["Leeftijd"], errors="coerce")
 
-        # 2. Generalisatie leeftijd (na noise)
-        if "Leeftijd" in df.columns and apply_general_age:
-            try:
-                df["Leeftijd"] = generalize_age(df["Leeftijd"], age_bin_size)
-            except Exception as e:
-                print(f"Fout bij leeftijd generalisatie: {e}")
+            # ruis eerst
+            if apply_noise and noise_amount > 0:
+                age_num = add_noise_numeric(age_num, noise_amount)
 
-        # 3. Generalisatie postcode
+            # dan generalisatie
+            if apply_general_age:
+                df["Leeftijd"] = generalize_age_from_numeric(age_num, age_bin_size, df["Leeftijd"])
+            else:
+                if apply_noise and noise_amount > 0:
+                    df["Leeftijd"] = age_num.round().astype("Int64").astype(str)
+
+        # Postcode
         if "Postcode" in df.columns and apply_general_pc:
-            try:
-                df["Postcode"] = generalize_postcode(df["Postcode"], pc_digits)
-            except Exception as e:
-                print(f"Fout bij postcode generalisatie: {e}")
+            df["Postcode"] = generalize_postcode(df["Postcode"], pc_digits)
 
-        # 4. Pseudonimisering (laatst, zodat het geen andere transformaties beïnvloedt)
+        # Pseudonimisering
         if apply_pseudo and direct_ids:
             for c in direct_ids:
                 if c in df.columns:
                     df[c] = [f"ID-{i+1:03d}" for i in range(len(df))]
 
-        # k-anonymity computation
+        # k-anon + suppress
         min_k, groups = k_anonymity(df, qi_cols)
 
-        suppressed_rows = 0
         if apply_suppress and qi_cols and groups is not None:
             small_groups = groups[groups["count"] < k]
             if len(small_groups):
                 temp = df.reset_index()
                 merged = temp.merge(small_groups[qi_cols], on=qi_cols, how="left", indicator=True)
                 to_drop_idx = merged[merged["_merge"] == "both"]["index"].values
-                suppressed_rows = len(to_drop_idx)
                 df = df.drop(index=to_drop_idx).copy()
                 min_k, groups = k_anonymity(df, qi_cols)
 
-        # scores
+        # scores NU berekenen (geen "beste van de ronde" meer)
         p_score = privacy_score(min_k if min_k is not None else 0, k)
         u_score = utility_score(self.df_orig, df)
-        
-        # Update best scores
-        if p_score > self.best_privacy_score:
-            self.best_privacy_score = p_score
-        if u_score > self.best_utility_score:
-            self.best_utility_score = u_score
-        
-        # Update score display
-        combined_score = int((self.best_privacy_score + self.best_utility_score) / 2)
-        self.score_label.configure(text=f"🎯 Beste score: {combined_score}/100")
 
-        # store transformed df
+        self.current_privacy_score = p_score
+        self.current_utility_score = u_score
+
         self.df_transformed = df
+        show_dataframe_in_tree(self.settings_data_container, self.df_transformed, font_size=16)
 
-        # update displays
-        self.refresh_main_views(groups=groups, min_k=min_k, p_score=p_score, u_score=u_score, suppressed_rows=suppressed_rows)
 
-    # Refresh tables in main area
-    def refresh_main_views(self, groups=None, min_k=None, p_score=None, u_score=None, suppressed_rows=0):
-        # Original data
-        show_dataframe_in_tree(self.orig_table_container, self.df_orig)
-
-        # Transformed data
-        show_dataframe_in_tree(self.trans_table_container, self.df_transformed)
-
-        # Groups table
-        for widget in self.groups_container.winfo_children():
-            widget.destroy()
-
-        # Show min_k
-        qi_idxs = self.qi_listbox.curselection()
-        qi_cols = [self.qi_listbox.get(i) for i in qi_idxs]
-        if qi_cols:
-            min_k_text = str(min_k) if min_k is not None else "-"
-            label = ctk.CTkLabel(self.groups_container, text=f"k (minimale groepsgrootte) op [{', '.join(qi_cols)}]: {min_k_text}", 
-                               anchor="w", font=ctk.CTkFont(size=12, weight="bold"))
-            label.pack(fill="x", padx=8, pady=(8,6))
-            if groups is not None and not groups.empty:
-                # show groups in a styled treeview
-                gframe = ctk.CTkFrame(self.groups_container)
-                gframe.pack(fill="both", expand=True, padx=8, pady=(0,8))
-                
-                # Use same simplified styling
-                cols = list(groups.columns)
-                tree = ttk.Treeview(gframe, columns=cols, show="headings", height=8, style="Custom.Treeview")
-                
-                vsb = ttk.Scrollbar(gframe, orient="vertical", command=tree.yview)
-                hsb = ttk.Scrollbar(gframe, orient="horizontal", command=tree.xview)
-                tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-                
-                for c in cols:
-                    tree.heading(c, text=str(c))
-                    # Better column sizing for groups
-                    if c == 'count':
-                        tree.column(c, width=80, anchor="center")
-                    else:
-                        tree.column(c, width=120, anchor="w")
-                
-                # sort groups by count ascending for visibility
-                groups_sorted = groups.sort_values("count")
-                for i, (_, row) in enumerate(groups_sorted.iterrows()):
-                    vals = [str(row.get(c, '')) for c in cols]
-                    tree.insert("", "end", values=vals)
-                
-                tree.grid(row=0, column=0, sticky="nsew")
-                vsb.grid(row=0, column=1, sticky="ns")
-                hsb.grid(row=1, column=0, sticky="ew")
-                gframe.rowconfigure(0, weight=1)
-                gframe.columnconfigure(0, weight=1)
-        else:
-            lbl = ctk.CTkLabel(self.groups_container, text="ℹ️ Selecteer quasi-identificatoren om k-anonimiteit te berekenen.", 
-                             anchor="w", font=ctk.CTkFont(size=12))
-            lbl.pack(fill="x", padx=8, pady=8)
-
-        # Metrics - improved styling and formatting
-        if p_score is None:
-            p_score = "-"
-        else:
-            p_score = f"{p_score}/100"
-        if u_score is None:
-            u_score = "-"
-        else:
-            u_score = f"{u_score}/100"
-        self.privacy_metric_lbl.configure(text=f"🔒 Privacy-score: {p_score}")
-        self.utility_metric_lbl.configure(text=f"📊 Bruikbaarheid-score: {u_score}")
-        self.suppressed_lbl.configure(text=f"🗑️ Suppressed rijen: {suppressed_rows}")
-
-# Run app
+# run
 if __name__ == "__main__":
     app = DataMaskerApp()
     app.mainloop()
