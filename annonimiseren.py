@@ -107,26 +107,49 @@ def privacy_score(min_k_val, target_k):
 
 
 def utility_score(df_orig, df_transformed):
-    # ongewijzigd = 100
+    """
+    Utility score: meet hoeveel originele informatie bewaard blijft.
+    - 50% gewicht: aantal rijen behouden (niet gesuppressed)
+    - 50% gewicht: hoeveel kolommen exact gelijk zijn gebleven
+    """
     if df_orig is None or df_transformed is None or df_orig.empty:
         return 0
+    
+    # Basis score: hoeveel rijen zijn behouden?
     rows_kept_ratio = len(df_transformed) / len(df_orig) if len(df_orig) > 0 else 0
-    base_score = rows_kept_ratio * 50
+    base_score = rows_kept_ratio * 50  # Max 50 punten
+    
+    # Info score: hoeveel kolommen zijn exact gelijk gebleven?
     common_cols = [c for c in df_orig.columns if c in df_transformed.columns]
     if not common_cols:
         return int(base_score)
+    
     col_scores = []
     for c in common_cols:
         a = df_orig[c].astype(str).values
         b = df_transformed[c].astype(str).values
         n = min(len(a), len(b))
+        
+        if n == 0:
+            continue
+            
+        # Exacte matches ratio
         exact_matches = (a[:n] == b[:n]).sum()
-        exact_score = exact_matches / n if n > 0 else 0
-        non_masked = sum(1 for v in b[:n] if v != '*' and str(v) != 'nan')
-        presence_score = non_masked / n if n > 0 else 0
-        col_scores.append(exact_score * 0.6 + presence_score * 0.4)
+        exact_ratio = exact_matches / n
+        
+        # Extra straf voor volledig gemaskeerde waarden (*)
+        fully_masked = sum(1 for v in b[:n] if v == '*' or v == '***')
+        masked_penalty = (fully_masked / n) * 0.5
+        
+        # Score per kolom
+        col_score = max(0, exact_ratio - masked_penalty)
+        col_scores.append(col_score)
+    
+    # Info score: gemiddelde van alle kolommen * 50 punten
     info_score = (sum(col_scores) / len(col_scores)) * 50 if col_scores else 0
-    return int(max(0, min(100, base_score + info_score)))
+    
+    total = base_score + info_score
+    return int(max(0, min(100, total)))
 
 
 def generalize_age_from_numeric(series_numeric, bin_size, original_series):
