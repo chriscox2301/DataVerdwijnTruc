@@ -1,0 +1,111 @@
+Naam,Leeftijd,Postcode,Opleidingkeuze
+Lisa Jansen,21,6215BG,HBO-ICT
+Tom Vermeer,22,6221CD,HBO-ICT
+Sara de Wit,23,6212AA,HBO-ICT
+Mark Peters,24,6225CC,HBO-ICT
+Eva Jans,25,6215BH,HBO-ICT
+Noah Smit,26,6213AD,HBO-ICT
+Mila Bakker,27,6216BA,HBO-ICT
+Daan Vis,28,6222CE,HBO-ICT
+Fleur van Lee,29,6214BG,HBO-ICT
+Kian Vos,30,6223CD,HBO-ICT
+Jordi Meertens,24,6215BG,HBO-ICT
+Nina Kusters,22,6212BA,HBO-ICT
+Romy Savelberg,23,6224CC,Verpleegkunde
+Ilias Karimi,29,6215BH,Verpleegkunde
+Joelle Smeets,21,6212AA,Verpleegkunde
+Bram Moonen,30,6221CD,Verpleegkunde
+Sanne Houben,20,6215BG,Verpleegkunde
+Quinn Peeters,27,6213AC,Verpleegkunde
+Tessa van Roy,24,6225CC,Verpleegkunde
+Marijn Driessen,23,6216BA,Verpleegkunde
+Yara Willems,22,6212BA,Verpleegkunde
+Lucas Cruts,25,6214BG,Verpleegkunde
+Ilse Hermans,28,6222CE,Verpleegkunde
+Ruben Janssen,26,6223CD,Verpleegkunde
+Lotte Franssen,21,6224CC,Social Work
+Hazy van Luik,25,6369TJ,Social Work
+Luc Bieren,21,6415XT,Social Work
+Kris Vags,22,6416PP,Social Work
+Sarah Schoen,23,6455CT,Social Work
+Rutger Boomsap,24,6413RR,Social Work
+Dana Veenstra,26,6215BG,Social Work
+Jasper Koenen,27,6221CD,Social Work
+Lena de Bruin,28,6212AA,Social Work
+Omar El Amrani,29,6225CC,Social Work
+Mara Geurts,24,6215BH,Social Work
+Timo van Dijk,22,6213AD,Social Work
+Iris Smolders,23,6216BA,Built Environment
+Pieter Lammers,24,6222CE,Built Environment
+Sophie Vroomen,25,6214BG,Built Environment
+Jelle Kooistra,26,6223CD,Built Environment
+Anouk Peters,27,6224CC,Built Environment
+Ravi Meijer,28,6215BG,Built Environment
+Noor Willems,29,6212BA,Built Environment
+Eline Jorissen,30,6213AC,Built Environment
+Bas Veldman,23,6225CC,Built Environment
+Zoe Maas,22,6216BA,Built Environment
+Finn Arts,24,6212AA,Built Environment
+Tara Hendriks,26,6221CD,Built Environment
+Jens Kramer,55,1187GJ,HBO-ICT
+Maud van Haren,33,2017RM,Verpleegkunde
+Bente Senden,28,7642RY,Social Work
+Koen Hofland,37,2923QY,Built Environment
+Anouk Peeters,41,4618FD,Fysiotherapie
+Ivar Smulders,27,8454TP,HBO-ICT
+Noa Vissers,44,9998XT,Verpleegkunde
+Ravi Kuipers,60,4578TR,Social Work
+Saar Veldman,56,2341NN,Built Environment
+Timo Verhagen,41,2279XC,Fysiotherapie
+Lara Brands,53,9281FN,HBO-ICT
+Boaz Schreuder,28,6375WL,Verpleegkunde
+Fenna Kessels,31,9008CN,Social Work
+Jade Wijnen,21,8429DK,Built Environment
+Mees Broens,54,1945OR,Fysiotherapie
+Lize Hoogland,37,1356KV,HBO-ICT
+Niek Smeets,31,2196BI,Verpleegkunde
+Vera Rutten,22,9866ZY,Social Work
+Thirza Reinders,22,8734AK,Built Environment
+Luuk Hendriks,26,7887JX,Fysiotherapie
+Yara Claessens,46,7184JR,HBO-ICT
+Mats Verbeek,60,9835DW,Verpleegkunde
+Nova Brouwers,25,3924ZK,Social Work
+Gideon Veenstra,26,4648VT,Built Environment
+Evy Jongmans,37,8585RO,Fysiotherapie
+Thijs Geerts,52,7214VG,HBO-ICT
+Mila Evers,40,3541HY,Verpleegkunde
+Rens Gerritsen,25,1527VK,Social Work
+Lieke de Bruyn,19,4943FC,Built Environment
+Bram van Dongen,20,8314PS,Fysiotherapie
+Nora Kolkman,21,5009TK,HBO-ICT
+Daan Gommans,32,9843FW,Verpleegkunde
+Romy Bosch,21,3295NH,Social Work
+Ties Schaap,54,6224PU,Built Environment
+Lynn Timmermans,38,4881HD,Fysiotherapie
+Owen Mulder,60,9540FH,HBO-ICT
+Elin Wouters,21,3869QL,Verpleegkunde
+Jelte Knaapen,49,1768ZY,Social Work
+Tess Sanders,60,7244UI,Built Environment
+Floris Bastiaans,44,7688DJ,Fysiotherapie
+Isa Meeuwis,52,8758GF,HBO-ICT
+Quin van den Hurk,27,8586XO,Verpleegkunde
+Floor Vaessen,44,9683DG,Social Work
+Amir Stassen,31,6411QX,Built Environment
+Juna Vroom,41,2514NV,Fysiotherapie
+Dex Heijnen,21,5398JP,HBO-ICT
+Mika Wiggers,20,2192ET,Verpleegkunde
+Zoë Koopmans,60,4555MW,Social Work
+Sven Schellens,39,5967YA,Built Environment
+Noor Brinkman,30,2922TT,Fysiotherapie
+Rutger Rutgerson,28,1114CT,Mechanica
+Bob Bobberino,41,6427PP,Mechanica
+Luuk Wijnen,21,4721AK,Mechanica
+Roy Loempia,55,3127NW,Mechanica
+Dylan van Hoof,23,6215BK,Mechanica
+Rosa Willems,27,6222GH,Mechanica
+Timo van Eck,25,6214DR,Mechanica
+Luna de Koning,21,6221HJ,Mechanica
+Sven Jacobs,29,6213AK,Mechanica
+Nina Groot,24,6224CL,Mechanica
+Ruben van Dongen,22,6212BB,Mechanica
+Mila Hermans,26,6225FD,Mechanica
